@@ -1,0 +1,11 @@
+streamlit
+pandas
+vaderSentiment
+google-api-python-client
+streamlit-autorefresh
+wordcloud
+matplotlib
+XlsxWriter
+gspread
+gspread_dataframe
+oauth2client

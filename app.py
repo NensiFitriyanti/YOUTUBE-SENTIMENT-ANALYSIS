@@ -96,26 +96,6 @@ st.markdown("""
 # ================= START MAIN CONTAINER =================
 st.markdown("<div class='main-container'>", unsafe_allow_html=True)
 
-# Judul
-st.title("📊 YouTube Sentiment Analysis Dashboard")
-
-# (Isi dashboard kamu: stat box, grafik, wordcloud, dll)
-# Contoh stat box
-col1, col2, col3 = st.columns(3)
-with col1:
-    st.markdown(f"""
-        <div class='hover-box' style='background-color:#f5f5f5; padding:20px; 
-        border-radius:15px; text-align:center; box-shadow:2px 2px 10px rgba(0,0,0,0.2);'>
-            <h4 style='margin:0; color:black;'>Video 1</h4>
-            <h2 style='margin:0; color:black;'>123</h2>
-            <p style='margin:0; color:black;'>Komentar</p>
-        </div>
-    """, unsafe_allow_html=True)
-
-# ================= END MAIN CONTAINER =================
-st.markdown("</div>", unsafe_allow_html=True)
-
-
 # ================= STREAMLIT START =================
 st.set_page_config(page_title="YouTube Sentiment Analysis", layout="wide")
 
@@ -276,3 +256,5 @@ if all_data:
 
 else:
     st.warning("Komentar tidak ditemukan atau ID salah.")
+    # ================= END MAIN CONTAINER =================
+st.markdown("</div>", unsafe_allow_html=True)

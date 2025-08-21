@@ -7,8 +7,6 @@ from wordcloud import WordCloud
 import matplotlib.pyplot as plt
 from io import BytesIO
 import re 
-import gspread
-from gspread_dataframe import set_with_dataframe, get_as_dataframe
 import json
 
 # ================= LOAD API KEY =================
@@ -17,7 +15,6 @@ if "YOUTUBE_API_KEY" not in st.secrets:
     st.stop()
 
 API_KEY = st.secrets["YOUTUBE_API_KEY"]
-
 youtube = build('youtube', 'v3', developerKey=API_KEY)
 analyzer = SentimentIntensityAnalyzer()
 
@@ -75,7 +72,6 @@ def fetch_and_analyze(video_id):
 # ================= CSS GLOBAL =================
 st.markdown("""
     <style>
-    /* Background kotak besar */
     .main-container {
         background-color: #ffffff;
         padding: 25px;
@@ -84,8 +80,6 @@ st.markdown("""
         margin: 20px auto;
         max-width: 1200px;
     }
-
-    /* Hover untuk stat box */
     .hover-box:hover {
         transform: scale(1.05);
         transition: transform 0.3s ease;
@@ -93,26 +87,20 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# ================= START MAIN CONTAINER =================
-st.markdown("<div class='main-container'>", unsafe_allow_html=True)
-
-# ================= STREAMLIT START =================
+# ================= START MAIN =================
 st.set_page_config(page_title="YouTube Sentiment Analysis", layout="wide")
-
-# 🔄 AUTO REFRESH tiap 5 menit (300000 ms)
 st_autorefresh(interval=300000, key="refresh_timer")
 
-# 🎨 CSS Global Hover Effect (supaya tidak trigger rerun)
-st.markdown("""
-    <style>
-    .hover-box:hover {
-        transform: scale(1.05);
-        transition: transform 0.3s ease;
-    }
-    </style>
-""", unsafe_allow_html=True)
+# ================= HEADER & MENU =================
+st.markdown("<h1 style='text-align:center;'>YOUTUBE SENTIMENT ANALYSIS</h1>", unsafe_allow_html=True)
 
-# ================= DEFAULT VIDEO INPUT =================
+menu = st.radio(
+    "Pilih Menu",
+    ["Dashboard Komentar", "Grafik Komentar", "Wordcloud", "Insight & Rekomendasi"],
+    horizontal=True
+)
+
+# ================= DATA PREP =================
 default_urls = [
     "https://youtu.be/Ugfjq0rDz8g?si=vWNO6nEAj9XB2LOB",
     "https://youtu.be/Lr1OHmBpwjw?si=9Mvu8o69V8Zt40yn",
@@ -128,133 +116,102 @@ default_urls = [
     "https://youtu.be/ZgkVHrihbXM?si=k8OittX6RL_gcgrd",
     "https://youtu.be/xvHiRY7skIk?si=nzAUYB71fQpLD2lv"
 ]
-
-# langsung ambil video_ids dari default_urls
 video_ids = [extract_video_id(v) for v in default_urls if extract_video_id(v)]
 
-all_data = []
-summary = {}
-
+all_data, summary = [], {}
 for vid in video_ids:
     df_video = fetch_and_analyze(vid)
     if not df_video.empty:
         all_data.append(df_video)
         summary[vid] = len(df_video)
 
-if all_data:
-    df = pd.concat(all_data, ignore_index=True)
+df = pd.concat(all_data, ignore_index=True) if all_data else pd.DataFrame()
 
-    # ================= HEADER =================
-    st.markdown(
-        """
-        <div style='display:flex; align-items:center;'>
-            <div style='background-color:#FF0000; border-radius:15px; padding:15px; width:80px; height:80px;
-                        display:flex; align-items:center; justify-content:center; box-shadow:5px 5px 15px rgba(0,0,0,0.3);'>
-                <img src="https://upload.wikimedia.org/wikipedia/commons/b/b8/YouTube_Logo_2017.svg" width="60">
-            </div>
-            <h1 style='flex:1; text-align:center; color:black;'>YouTube Sentiment Analysis</h1>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+# ================= HALAMAN =================
+if menu == "Dashboard Komentar":
+    if df.empty:
+        st.warning("Komentar tidak ditemukan.")
+    else:
+        # === STAT BOX PER VIDEO ===
+        st.subheader("📊 Statistik Komentar per Video")
+        colors = ["#FF9999", "#99CCFF", "#99FF99", "#FFD966", "#FFB266", "#CC99FF"]
+        cols = st.columns(len(summary))
+        for i, (vid, count) in enumerate(summary.items()):
+            color = colors[i % len(colors)]
+            with cols[i]:
+                st.markdown(
+                    f"""
+                    <div class='hover-box' style='background-color:{color}; padding:20px; border-radius:15px; text-align:center;
+                                box-shadow:2px 2px 10px rgba(0,0,0,0.2);'>
+                        <h4 style='margin:0; color:black;'>Video {i+1}</h4>
+                        <h2 style='margin:0; color:black;'>{count}</h2>
+                        <p style='margin:0; color:black;'>Komentar</p>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
 
-    # ================= STAT BOX PER VIDEO =================
-    st.subheader("📊 Statistik Komentar per Video")
-    colors = ["#FF9999", "#99CCFF", "#99FF99", "#FFD966", "#FFB266", "#CC99FF"]
-    cols = st.columns(len(summary))
-    for i, (vid, count) in enumerate(summary.items()):
-        color = colors[i % len(colors)]
-        with cols[i]:
-            st.markdown(
-                f"""
-                <div class='hover-box' style='background-color:{color}; padding:20px; border-radius:15px; text-align:center;
-                            box-shadow:2px 2px 10px rgba(0,0,0,0.2);'>
-                    <h4 style='margin:0; color:black;'>Video {i+1}</h4>
-                    <h2 style='margin:0; color:black;'>{count}</h2>
-                    <p style='margin:0; color:black;'>Komentar</p>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
+        # === RINGKASAN KESELURUHAN ===
+        total_comments = len(df)
+        st.markdown("### 📌 Ringkasan Keseluruhan")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("Total Komentar", total_comments)
+        with col2:
+            st.metric("Total User", df['Komentar'].nunique())
 
-    # ================= 2 KOTAK PANJANG =================
-    total_comments = len(df)
-    st.markdown("### 📌 Ringkasan Keseluruhan")
-    col1, col2 = st.columns(2)
+elif menu == "Grafik Komentar":
+    if df.empty:
+        st.warning("Komentar tidak ditemukan.")
+    else:
+        st.markdown("### 📋 Komentar & Sentimen")
+        col1, col2 = st.columns([2,1])
+        with col1:
+            st.dataframe(df)
+        with col2:
+            st.bar_chart(df['Sentimen'].value_counts())
 
-    with col1:
-        st.markdown(
-            f"""
-            <div class='hover-box' style='background-color:#f0f8ff; border-radius:15px; padding:25px; text-align:center;
-                        box-shadow:3px 3px 12px rgba(0,0,0,0.2);'>
-                <img src="https://cdn-icons-png.flaticon.com/512/709/709496.png" width="50">
-                <h3>Total Komentar</h3>
-                <h2 style='color:#FF0000;'>{total_comments}</h2>
-                <p>100%</p>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+elif menu == "Wordcloud":
+    if df.empty:
+        st.warning("Komentar tidak ditemukan.")
+    else:
+        st.markdown("### ☁️ Word Cloud & Pie Chart")
+        col1, col2 = st.columns(2)
+        with col1:
+            all_text = " ".join(df["Komentar"].tolist())
+            all_text = all_text.encode("utf-8", "ignore").decode("utf-8")
+            if all_text.strip():
+                wordcloud = WordCloud(width=800, height=400, background_color="white").generate(all_text)
+                fig_wc, ax = plt.subplots(figsize=(10, 5))
+                ax.imshow(wordcloud, interpolation="bilinear")
+                ax.axis("off")
+                st.pyplot(fig_wc)
+        with col2:
+            sentiment_counts = df['Sentimen'].value_counts()
+            fig, ax = plt.subplots()
+            ax.pie(sentiment_counts, labels=sentiment_counts.index, autopct='%1.1f%%', startangle=90, shadow=True)
+            ax.axis("equal")
+            st.pyplot(fig)
 
-    with col2:
-        st.markdown(
-            f"""
-            <div class='hover-box' style='background-color:#f9f9f9; border-radius:15px; padding:25px; text-align:center;
-                        box-shadow:3px 3px 12px rgba(0,0,0,0.2);'>
-                <img src="https://cdn-icons-png.flaticon.com/512/747/747376.png" width="50">
-                <h3>Total User</h3>
-                <h2 style='color:#0073e6;'>{df['Komentar'].nunique()}</h2>
-                <p>100%</p>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+elif menu == "Insight & Rekomendasi":
+    if df.empty:
+        st.warning("Komentar tidak ditemukan.")
+    else:
+        st.subheader("📊 Insight Sentimen")
+        total, positif, negatif, netral = len(df), (df['Sentimen']=='Positif').sum(), (df['Sentimen']=='Negatif').sum(), (df['Sentimen']=='Netral').sum()
+        st.write(f"Total komentar dianalisis: **{total}**")
+        st.write(f"Positif: **{positif}** | Negatif: **{negatif}** | Netral: **{netral}**")
+        if positif > negatif:
+            st.success("Mayoritas komentar positif 🎉. Konten disukai audiens.")
+        elif negatif > positif:
+            st.error("Komentar negatif lebih dominan ⚠️. Perlu evaluasi konten.")
+        else:
+            st.info("Komentar seimbang. Bisa ditingkatkan dengan interaksi lebih aktif.")
 
-    # ================= KOMENTAR & SENTIMEN + GRAFIK =================
-    st.markdown("### 📋 Komentar, Sentimen dan Grafik Sentimen")
-    col1, col2 = st.columns([2,1])
-    with col1:
-        st.dataframe(df)
-    with col2:
-        st.bar_chart(df['Sentimen'].value_counts())
-
-    # ================= WORDCLOUD + PIE CHART =================
-    st.markdown("### ☁️ Word Cloud & Pie Chart")
-    col1, col2 = st.columns(2)
-
-    with col1:
-        all_text = " ".join(df["Komentar"].tolist())
-        all_text = all_text.encode("utf-8", "ignore").decode("utf-8")
-        if all_text.strip():
-            wordcloud = WordCloud(width=800, height=400, background_color="white").generate(all_text)
-            fig_wc, ax = plt.subplots(figsize=(10, 5))
-            ax.imshow(wordcloud, interpolation="bilinear")
-            ax.axis("off")
-            st.pyplot(fig_wc)
-
-    with col2:
-        sentiment_counts = df['Sentimen'].value_counts()
-        fig, ax = plt.subplots()
-        wedges, texts, autotexts = ax.pie(
-            sentiment_counts, labels=sentiment_counts.index, autopct='%1.1f%%', startangle=90, shadow=True
-        )
-        ax.axis("equal")
-        st.pyplot(fig)
-
-    # ================= DOWNLOAD BUTTONS =================
-    st.markdown("### ⬇️ Unduh Hasil")
-    csv = df.to_csv(index=False).encode('utf-8')
-    output = BytesIO()
-    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        df.to_excel(writer, index=False, sheet_name="Sentimen")
-
-    col1, col2 = st.columns(2)
-    with col1:
-        st.download_button("Download CSV", csv, "sentimen_youtube.csv", "text/csv")
-    with col2:
-        st.download_button("Download Excel", output.getvalue(), "sentimen_youtube.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
-else:
-    st.warning("Komentar tidak ditemukan atau ID salah.")
-    # ================= END MAIN CONTAINER =================
-st.markdown("</div>", unsafe_allow_html=True)
+        st.subheader("💡 Rekomendasi")
+        st.markdown("""
+        - Tingkatkan interaksi dengan penonton (balas komentar, adakan Q&A).  
+        - Perhatikan topik/kata dominan yang disukai.  
+        - Jika komentar negatif banyak, evaluasi kualitas video & penyampaian.  
+        - Gunakan feedback untuk konten berikutnya.  
+        """)

@@ -73,42 +73,55 @@ st.markdown("""
     /* ===== Menu Style ===== */
     div[role=radiogroup] {
         display: flex;
-        justify-content: center;
-        gap: 30px;
+        justify-content: space-between; /* rata kanan kiri */
+        gap: 20px;
         margin-bottom: 25px;
+        width: 100%;
     }
     div[role=radiogroup] label {
+        flex: 1;
+        text-align: center;
         background: #f5f5f5;
-        padding: 12px 25px;
-        border-radius: 12px;
-        box-shadow: 2px 2px 10px rgba(0,0,0,0.1);
+        padding: 12px 20px;
+        border-radius: 15px;
+        box-shadow: 3px 3px 10px rgba(0,0,0,0.2);
         cursor: pointer;
         transition: all 0.3s ease;
     }
     div[role=radiogroup] label:hover {
         background: #e0e0e0;
-        transform: scale(1.05);
+        transform: scale(1.05) rotateX(5deg);
+        box-shadow: 6px 6px 20px rgba(0,0,0,0.3);
     }
 
     /* ===== Stat Box per Video ===== */
     .video-box {
-        background: #ffffff;
         padding: 20px;
         border-radius: 15px;
-        box-shadow: 2px 2px 10px rgba(0,0,0,0.15);
+        color: black;
         text-align: center;
         margin: 10px;
+        transition: all 0.3s ease;
+        box-shadow: 3px 3px 15px rgba(0,0,0,0.2);
+    }
+    .video-box:hover {
+        transform: scale(1.05) translateY(-5px);
+        box-shadow: 6px 6px 25px rgba(0,0,0,0.35);
     }
 
     /* ===== Ringkasan Total ===== */
     .big-box {
-        background: linear-gradient(135deg, #99CCFF, #99FFCC);
         padding: 25px;
         border-radius: 20px;
         text-align: center;
         color: black;
         font-weight: bold;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+        box-shadow: 3px 3px 15px rgba(0,0,0,0.25);
+        transition: all 0.3s ease;
+    }
+    .big-box:hover {
+        transform: scale(1.05) translateY(-5px);
+        box-shadow: 8px 8px 30px rgba(0,0,0,0.4);
     }
     .big-box h2 {
         margin: 0;
@@ -178,6 +191,16 @@ if menu == "Dashboard Komentar":
     else:
         st.subheader("📊 Statistik Komentar per Video")
 
+        # warna berbeda tiap kotak
+        colors = [
+            "linear-gradient(135deg,#FF9999,#FFCCCC)",
+            "linear-gradient(135deg,#99CCFF,#CCE5FF)",
+            "linear-gradient(135deg,#99FF99,#CCFFCC)",
+            "linear-gradient(135deg,#FFD966,#FFE699)",
+            "linear-gradient(135deg,#FFB266,#FFD9B3)",
+            "linear-gradient(135deg,#CC99FF,#E5CCFF)"
+        ]
+
         # tampilkan 3 per baris
         cols_per_row = 3
         video_items = list(summary.items())
@@ -185,10 +208,11 @@ if menu == "Dashboard Komentar":
             row_items = video_items[row_start: row_start+cols_per_row]
             cols = st.columns(len(row_items))
             for i, (vid, count) in enumerate(row_items):
+                color = colors[(row_start+i) % len(colors)]
                 with cols[i]:
                     st.markdown(
                         f"""
-                        <div class="video-box">
+                        <div class="video-box" style="background:{color};">
                             <h4>Video {row_start+i+1}</h4>
                             <h2>{count}</h2>
                             <p>Komentar</p>
@@ -206,7 +230,7 @@ if menu == "Dashboard Komentar":
         with col1:
             st.markdown(
                 f"""
-                <div class="big-box">
+                <div class="big-box" style="background:linear-gradient(135deg,#99CCFF,#99FFCC);">
                     <h2>💬 {total_comments}</h2>
                     <p>Total Komentar</p>
                 </div>
@@ -215,7 +239,7 @@ if menu == "Dashboard Komentar":
         with col2:
             st.markdown(
                 f"""
-                <div class="big-box">
+                <div class="big-box" style="background:linear-gradient(135deg,#FFCC99,#FFEECC);">
                     <h2>👥 {total_users}</h2>
                     <p>Total User</p>
                 </div>
@@ -248,7 +272,14 @@ elif menu == "Wordcloud":
     with col2:
         sentiment_counts = df['Sentimen'].value_counts()
         fig, ax = plt.subplots()
-        ax.pie(sentiment_counts, labels=sentiment_counts.index, autopct='%1.1f%%', startangle=90, shadow=True)
+        ax.pie(
+            sentiment_counts,
+            labels=sentiment_counts.index,
+            autopct='%1.1f%%',
+            startangle=90,
+            shadow=True,
+            wedgeprops={"edgecolor":"black","linewidth":1,"antialiased":True}
+        )
         ax.axis("equal")
         st.pyplot(fig)
     st.markdown("</div>", unsafe_allow_html=True)

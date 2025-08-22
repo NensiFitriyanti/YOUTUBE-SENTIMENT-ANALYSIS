@@ -5,9 +5,7 @@ from googleapiclient.discovery import build
 from streamlit_autorefresh import st_autorefresh
 from wordcloud import WordCloud
 import matplotlib.pyplot as plt
-from io import BytesIO
 import re 
-import json
 
 # ================= LOAD API KEY =================
 if "YOUTUBE_API_KEY" not in st.secrets:
@@ -72,6 +70,56 @@ def fetch_and_analyze(video_id):
 # ================= CSS GLOBAL =================
 st.markdown("""
     <style>
+    /* ===== Menu Style ===== */
+    div[role=radiogroup] {
+        display: flex;
+        justify-content: center;
+        gap: 30px;
+        margin-bottom: 25px;
+    }
+    div[role=radiogroup] label {
+        background: #f5f5f5;
+        padding: 12px 25px;
+        border-radius: 12px;
+        box-shadow: 2px 2px 10px rgba(0,0,0,0.1);
+        cursor: pointer;
+        transition: all 0.3s ease;
+    }
+    div[role=radiogroup] label:hover {
+        background: #e0e0e0;
+        transform: scale(1.05);
+    }
+
+    /* ===== Stat Box per Video ===== */
+    .video-box {
+        background: #ffffff;
+        padding: 20px;
+        border-radius: 15px;
+        box-shadow: 2px 2px 10px rgba(0,0,0,0.15);
+        text-align: center;
+        margin: 10px;
+    }
+
+    /* ===== Ringkasan Total ===== */
+    .big-box {
+        background: linear-gradient(135deg, #99CCFF, #99FFCC);
+        padding: 25px;
+        border-radius: 20px;
+        text-align: center;
+        color: black;
+        font-weight: bold;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+    }
+    .big-box h2 {
+        margin: 0;
+        font-size: 2.2em;
+    }
+    .big-box p {
+        margin: 5px 0 0;
+        font-size: 1.1em;
+    }
+
+    /* ===== Main Container ===== */
     .main-container {
         background-color: #ffffff;
         padding: 25px;
@@ -79,10 +127,6 @@ st.markdown("""
         box-shadow: 0px 4px 20px rgba(0,0,0,0.2);
         margin: 20px auto;
         max-width: 1200px;
-    }
-    .hover-box:hover {
-        transform: scale(1.05);
-        transition: transform 0.3s ease;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -132,86 +176,101 @@ if menu == "Dashboard Komentar":
     if df.empty:
         st.warning("Komentar tidak ditemukan.")
     else:
-        # === STAT BOX PER VIDEO ===
         st.subheader("📊 Statistik Komentar per Video")
-        colors = ["#FF9999", "#99CCFF", "#99FF99", "#FFD966", "#FFB266", "#CC99FF"]
-        cols = st.columns(len(summary))
-        for i, (vid, count) in enumerate(summary.items()):
-            color = colors[i % len(colors)]
-            with cols[i]:
-                st.markdown(
-                    f"""
-                    <div class='hover-box' style='background-color:{color}; padding:20px; border-radius:15px; text-align:center;
-                                box-shadow:2px 2px 10px rgba(0,0,0,0.2);'>
-                        <h4 style='margin:0; color:black;'>Video {i+1}</h4>
-                        <h2 style='margin:0; color:black;'>{count}</h2>
-                        <p style='margin:0; color:black;'>Komentar</p>
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
+
+        # tampilkan 3 per baris
+        cols_per_row = 3
+        video_items = list(summary.items())
+        for row_start in range(0, len(video_items), cols_per_row):
+            row_items = video_items[row_start: row_start+cols_per_row]
+            cols = st.columns(len(row_items))
+            for i, (vid, count) in enumerate(row_items):
+                with cols[i]:
+                    st.markdown(
+                        f"""
+                        <div class="video-box">
+                            <h4>Video {row_start+i+1}</h4>
+                            <h2>{count}</h2>
+                            <p>Komentar</p>
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
 
         # === RINGKASAN KESELURUHAN ===
         total_comments = len(df)
+        total_users = df['Komentar'].nunique()
         st.markdown("### 📌 Ringkasan Keseluruhan")
+
         col1, col2 = st.columns(2)
         with col1:
-            st.metric("Total Komentar", total_comments)
+            st.markdown(
+                f"""
+                <div class="big-box">
+                    <h2>💬 {total_comments}</h2>
+                    <p>Total Komentar</p>
+                </div>
+                """, unsafe_allow_html=True
+            )
         with col2:
-            st.metric("Total User", df['Komentar'].nunique())
+            st.markdown(
+                f"""
+                <div class="big-box">
+                    <h2>👥 {total_users}</h2>
+                    <p>Total User</p>
+                </div>
+                """, unsafe_allow_html=True
+            )
 
 elif menu == "Grafik Komentar":
-    if df.empty:
-        st.warning("Komentar tidak ditemukan.")
-    else:
-        st.markdown("### 📋 Komentar & Sentimen")
-        col1, col2 = st.columns([2,1])
-        with col1:
-            st.dataframe(df)
-        with col2:
-            st.bar_chart(df['Sentimen'].value_counts())
+    st.markdown("### 📋 Komentar & Sentimen")
+    st.markdown("<div class='main-container'>", unsafe_allow_html=True)
+    col1, col2 = st.columns([2,1])
+    with col1:
+        st.dataframe(df)
+    with col2:
+        st.bar_chart(df['Sentimen'].value_counts())
+    st.markdown("</div>", unsafe_allow_html=True)
 
 elif menu == "Wordcloud":
-    if df.empty:
-        st.warning("Komentar tidak ditemukan.")
-    else:
-        st.markdown("### ☁️ Word Cloud & Pie Chart")
-        col1, col2 = st.columns(2)
-        with col1:
-            all_text = " ".join(df["Komentar"].tolist())
-            all_text = all_text.encode("utf-8", "ignore").decode("utf-8")
-            if all_text.strip():
-                wordcloud = WordCloud(width=800, height=400, background_color="white").generate(all_text)
-                fig_wc, ax = plt.subplots(figsize=(10, 5))
-                ax.imshow(wordcloud, interpolation="bilinear")
-                ax.axis("off")
-                st.pyplot(fig_wc)
-        with col2:
-            sentiment_counts = df['Sentimen'].value_counts()
-            fig, ax = plt.subplots()
-            ax.pie(sentiment_counts, labels=sentiment_counts.index, autopct='%1.1f%%', startangle=90, shadow=True)
-            ax.axis("equal")
-            st.pyplot(fig)
+    st.markdown("### ☁️ Word Cloud & Pie Chart")
+    st.markdown("<div class='main-container'>", unsafe_allow_html=True)
+    col1, col2 = st.columns(2)
+    with col1:
+        all_text = " ".join(df["Komentar"].tolist())
+        all_text = all_text.encode("utf-8", "ignore").decode("utf-8")
+        if all_text.strip():
+            wordcloud = WordCloud(width=800, height=400, background_color="white").generate(all_text)
+            fig_wc, ax = plt.subplots(figsize=(10, 5))
+            ax.imshow(wordcloud, interpolation="bilinear")
+            ax.axis("off")
+            st.pyplot(fig_wc)
+    with col2:
+        sentiment_counts = df['Sentimen'].value_counts()
+        fig, ax = plt.subplots()
+        ax.pie(sentiment_counts, labels=sentiment_counts.index, autopct='%1.1f%%', startangle=90, shadow=True)
+        ax.axis("equal")
+        st.pyplot(fig)
+    st.markdown("</div>", unsafe_allow_html=True)
 
 elif menu == "Insight & Rekomendasi":
-    if df.empty:
-        st.warning("Komentar tidak ditemukan.")
+    st.subheader("📊 Insight Sentimen")
+    total, positif, negatif, netral = len(df), (df['Sentimen']=='Positif').sum(), (df['Sentimen']=='Negatif').sum(), (df['Sentimen']=='Netral').sum()
+    st.markdown("<div class='main-container'>", unsafe_allow_html=True)
+    st.write(f"Total komentar dianalisis: **{total}**")
+    st.write(f"Positif: **{positif}** | Negatif: **{negatif}** | Netral: **{netral}**")
+    if positif > negatif:
+        st.success("Mayoritas komentar positif 🎉. Konten disukai audiens.")
+    elif negatif > positif:
+        st.error("Komentar negatif lebih dominan ⚠️. Perlu evaluasi konten.")
     else:
-        st.subheader("📊 Insight Sentimen")
-        total, positif, negatif, netral = len(df), (df['Sentimen']=='Positif').sum(), (df['Sentimen']=='Negatif').sum(), (df['Sentimen']=='Netral').sum()
-        st.write(f"Total komentar dianalisis: **{total}**")
-        st.write(f"Positif: **{positif}** | Negatif: **{negatif}** | Netral: **{netral}**")
-        if positif > negatif:
-            st.success("Mayoritas komentar positif 🎉. Konten disukai audiens.")
-        elif negatif > positif:
-            st.error("Komentar negatif lebih dominan ⚠️. Perlu evaluasi konten.")
-        else:
-            st.info("Komentar seimbang. Bisa ditingkatkan dengan interaksi lebih aktif.")
+        st.info("Komentar seimbang. Bisa ditingkatkan dengan interaksi lebih aktif.")
 
-        st.subheader("💡 Rekomendasi")
-        st.markdown("""
-        - Tingkatkan interaksi dengan penonton (balas komentar, adakan Q&A).  
-        - Perhatikan topik/kata dominan yang disukai.  
-        - Jika komentar negatif banyak, evaluasi kualitas video & penyampaian.  
-        - Gunakan feedback untuk konten berikutnya.  
-        """)
+    st.subheader("💡 Rekomendasi")
+    st.markdown("""
+    - Tingkatkan interaksi dengan penonton (balas komentar, adakan Q&A).  
+    - Perhatikan topik/kata dominan yang disukai.  
+    - Jika komentar negatif banyak, evaluasi kualitas video & penyampaian.  
+    - Gunakan feedback untuk konten berikutnya.  
+    """)
+    st.markdown("</div>", unsafe_allow_html=True)

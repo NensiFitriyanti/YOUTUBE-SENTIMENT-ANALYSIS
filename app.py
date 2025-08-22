@@ -5,8 +5,7 @@ from googleapiclient.discovery import build
 from streamlit_autorefresh import st_autorefresh
 from wordcloud import WordCloud
 import matplotlib.pyplot as plt
-import base64
-from io import BytesIO
+import re 
 
 # ================= LOAD API KEY =================
 if "YOUTUBE_API_KEY" not in st.secrets:
@@ -17,112 +16,292 @@ API_KEY = st.secrets["YOUTUBE_API_KEY"]
 youtube = build('youtube', 'v3', developerKey=API_KEY)
 analyzer = SentimentIntensityAnalyzer()
 
-st.set_page_config(page_title="📊 YouTube Sentiment Dashboard", layout="wide")
+# ================= FUNCTION EXTRACT VIDEO ID =================
+def extract_video_id(url_or_id):
+    if re.match(r'^[\w-]{11}$', url_or_id):
+        return url_or_id
+    match = re.search(r'v=([\w-]{11})', url_or_id)
+    if match:
+        return match.group(1)
+    match = re.search(r'youtu\.be/([\w-]{11})', url_or_id)
+    if match:
+        return match.group(1)
+    return None
 
-# ================== STYLE ==================
+# ================= FUNCTION GET COMMENT =================
+def get_comments(video_id, max_results=200):
+    comments = []
+    try:
+        request = youtube.commentThreads().list(
+            part='snippet',
+            videoId=video_id,
+            maxResults=100,
+            textFormat="plainText",
+            order="time"
+        )
+        while request and len(comments) < max_results:
+            response = request.execute()
+            for item in response['items']:
+                comment = item['snippet']['topLevelComment']['snippet']['textDisplay']
+                comments.append(comment)
+            request = youtube.commentThreads().list_next(request, response)
+    except Exception as e:
+        st.error(f"Gagal ambil komentar: {e}")
+    return comments[:max_results]
+
+def analyze_sentiment(text):
+    score = analyzer.polarity_scores(text)
+    if score['compound'] >= 0.05:
+        return 'Positif'
+    elif score['compound'] <= -0.05:
+        return 'Negatif'
+    else:
+        return 'Netral'
+
+@st.cache_data(ttl=300)
+def fetch_and_analyze(video_id):
+    comments = get_comments(video_id)
+    data = []
+    for c in comments:
+        label = analyze_sentiment(c)
+        data.append({"VideoID": video_id, "Komentar": c, "Sentimen": label})
+    return pd.DataFrame(data)
+
+# ================= CSS GLOBAL =================
 st.markdown("""
-<style>
-/* Judul Tengah */
-h1 {
-    text-align: center;
-}
+    <style>
+    /* ===== Menu Style ===== */
+    div[role=radiogroup] {
+        display: flex;
+        justify-content: space-between; /* rata kanan kiri */
+        gap: 20px;
+        margin-bottom: 25px;
+        width: 100%;
+    }
+    div[role=radiogroup] label {
+        flex: 1;
+        text-align: center;
+        background: #f5f5f5;
+        padding: 12px 20px;
+        border-radius: 15px;
+        box-shadow: 3px 3px 10px rgba(0,0,0,0.2);
+        cursor: pointer;
+        transition: all 0.3s ease;
+    }
+    div[role=radiogroup] label:hover {
+        background: #e0e0e0;
+        transform: scale(1.05) rotateX(5deg);
+        box-shadow: 6px 6px 20px rgba(0,0,0,0.3);
+    }
 
-/* Menu rata kiri kanan */
-.menu-container {
-    display: flex;
-    justify-content: space-between;
-    padding: 10px 50px;
-    margin-bottom: 20px;
-}
+    /* ===== Stat Box per Video ===== */
+    .video-box {
+        padding: 20px;
+        border-radius: 15px;
+        color: black;
+        text-align: center;
+        margin: 10px;
+        transition: all 0.3s ease;
+        box-shadow: 3px 3px 15px rgba(0,0,0,0.2);
+    }
+    .video-box:hover {
+        transform: scale(1.05) translateY(-5px);
+        box-shadow: 6px 6px 25px rgba(0,0,0,0.35);
+    }
 
-/* Kotak komentar */
-.comment-box {
-    background: linear-gradient(145deg, #ffffff, #f0f0f0);
-    border-radius: 15px;
-    padding: 12px 18px;
-    margin-bottom: 12px;
-    box-shadow: 6px 6px 12px #d1d1d1, -6px -6px 12px #ffffff;
-    transition: 0.3s ease-in-out;
-}
-.comment-box:hover {
-    transform: translateY(-5px);
-    box-shadow: 8px 8px 16px #c1c1c1, -8px -8px 16px #ffffff;
-}
+    /* ===== Ringkasan Total ===== */
+    .big-box {
+        padding: 25px;
+        border-radius: 20px;
+        text-align: center;
+        color: black;
+        font-weight: bold;
+        box-shadow: 3px 3px 15px rgba(0,0,0,0.25);
+        transition: all 0.3s ease;
+    }
+    .big-box:hover {
+        transform: scale(1.05) translateY(-5px);
+        box-shadow: 8px 8px 30px rgba(0,0,0,0.4);
+    }
+    .big-box h2 {
+        margin: 0;
+        font-size: 2.2em;
+    }
+    .big-box p {
+        margin: 5px 0 0;
+        font-size: 1.1em;
+    }
 
-/* Insight box di tengah */
-.insight-box {
-    text-align: center;
-    background: linear-gradient(145deg, #ffffff, #f8f8f8);
-    border-radius: 20px;
-    padding: 20px;
-    margin: auto;
-    width: 70%;
-    box-shadow: 8px 8px 16px #d6d6d6, -8px -8px 16px #ffffff;
-    transition: 0.3s ease-in-out;
-}
-.insight-box:hover {
-    transform: scale(1.02);
-}
-</style>
+    /* ===== Main Container ===== */
+    .main-container {
+        background-color: #ffffff;
+        padding: 25px;
+        border-radius: 20px;
+        box-shadow: 0px 4px 20px rgba(0,0,0,0.2);
+        margin: 20px auto;
+        max-width: 1200px;
+    }
+    </style>
 """, unsafe_allow_html=True)
 
-# ================== TITLE ==================
-st.markdown("<h1>📊 YouTube Sentiment Analysis Dashboard</h1>", unsafe_allow_html=True)
+# ================= START MAIN =================
+st.set_page_config(page_title="YouTube Sentiment Analysis", layout="wide")
+st_autorefresh(interval=300000, key="refresh_timer")
 
-# ================== MENU ==================
-menu_left = st.selectbox("📂 Pilih Data", ["Tabel Komentar", "Grafik Komentar"])
-menu_right = st.selectbox("📊 Pilih Visualisasi", ["Word Cloud", "Pie Chart"])
+# ================= HEADER & MENU =================
+st.markdown("<h1 style='text-align:center;'>YOUTUBE SENTIMENT ANALYSIS</h1>", unsafe_allow_html=True)
 
-st.markdown("<div class='menu-container'></div>", unsafe_allow_html=True)
+menu = st.radio(
+    "Pilih Menu",
+    ["Dashboard Komentar", "Grafik Komentar", "Wordcloud", "Insight & Rekomendasi"],
+    horizontal=True
+)
 
-# ================== DATA YOUTUBE ==================
-video_id = st.text_input("Masukkan YouTube Video ID:", "dQw4w9WgXcQ")
+# ================= DATA PREP =================
+default_urls = [
+    "https://youtu.be/Ugfjq0rDz8g?si=vWNO6nEAj9XB2LOB",
+    "https://youtu.be/Lr1OHmBpwjw?si=9Mvu8o69V8Zt40yn",
+    "https://youtu.be/5BFIAHBBdao?si=LPNB-8ZtJIk3xZVu",
+    "https://youtu.be/UzAgIMvb3c0?si=fH01vTOsKuUb8IoF",
+    "https://youtu.be/6tAZ-3FSYr0?si=rKhlEpS3oO7BOOtR",
+    "https://youtu.be/M-Qsvh18JNM?si=JJZ2-RKikuexaNw5",
+    "https://youtu.be/vSbe5C7BTuM?si=2MPkRB08C3P9Vilt",
+    "https://youtu.be/Y7hcBMJDNwk?si=rI0-dsunElb5XMVl",
+    "https://youtu.be/iySgErYzRR0?si=05mihs5jDRDXYgSZ",
+    "https://youtu.be/gwEt2_yxTmc?si=rfBwVGhePy35YA5D",
+    "https://youtu.be/9RCbgFi1idc?si=x7ILIEMAow5geJWS",
+    "https://youtu.be/ZgkVHrihbXM?si=k8OittX6RL_gcgrd",
+    "https://youtu.be/xvHiRY7skIk?si=nzAUYB71fQpLD2lv"
+]
+video_ids = [extract_video_id(v) for v in default_urls if extract_video_id(v)]
 
-def get_comments(video_id):
-    comments, sentiments = [], []
-    request = youtube.commentThreads().list(part="snippet", videoId=video_id, maxResults=50, textFormat="plainText")
-    response = request.execute()
+all_data, summary = [], {}
+for vid in video_ids:
+    df_video = fetch_and_analyze(vid)
+    if not df_video.empty:
+        all_data.append(df_video)
+        summary[vid] = len(df_video)
 
-    for item in response["items"]:
-        comment = item["snippet"]["topLevelComment"]["snippet"]["textDisplay"]
-        score = analyzer.polarity_scores(comment)
-        comments.append(comment)
-        sentiments.append(score)
-    return pd.DataFrame(sentiments).assign(Comment=comments)
+df = pd.concat(all_data, ignore_index=True) if all_data else pd.DataFrame()
 
-if video_id:
-    df = get_comments(video_id)
+# ================= HALAMAN =================
+if menu == "Dashboard Komentar":
+    if df.empty:
+        st.warning("Komentar tidak ditemukan.")
+    else:
+        st.subheader("📊 Statistik Komentar per Video")
 
-    # ======== Tabel Komentar ========
-    if menu_left == "Tabel Komentar":
-        st.subheader("💬 Daftar Komentar")
-        for _, row in df.iterrows():
-            st.markdown(f"<div class='comment-box'><b>{row['Comment']}</b><br>😊 Positif: {row['pos']:.2f} | 😐 Netral: {row['neu']:.2f} | 😠 Negatif: {row['neg']:.2f}</div>", unsafe_allow_html=True)
+        # warna berbeda tiap kotak
+        colors = [
+            "linear-gradient(135deg,#FF9999,#FFCCCC)",
+            "linear-gradient(135deg,#99CCFF,#CCE5FF)",
+            "linear-gradient(135deg,#99FF99,#CCFFCC)",
+            "linear-gradient(135deg,#FFD966,#FFE699)",
+            "linear-gradient(135deg,#FFB266,#FFD9B3)",
+            "linear-gradient(135deg,#CC99FF,#E5CCFF)"
+        ]
 
-    # ======== Grafik Komentar ========
-    elif menu_left == "Grafik Komentar":
-        st.subheader("📈 Grafik Komentar")
-        st.line_chart(df[["pos", "neu", "neg"]])
+        # tampilkan 3 per baris
+        cols_per_row = 3
+        video_items = list(summary.items())
+        for row_start in range(0, len(video_items), cols_per_row):
+            row_items = video_items[row_start: row_start+cols_per_row]
+            cols = st.columns(len(row_items))
+            for i, (vid, count) in enumerate(row_items):
+                color = colors[(row_start+i) % len(colors)]
+                with cols[i]:
+                    st.markdown(
+                        f"""
+                        <div class="video-box" style="background:{color};">
+                            <h4>Video {row_start+i+1}</h4>
+                            <h2>{count}</h2>
+                            <p>Komentar</p>
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
 
-    # ======== Word Cloud ========
-    if menu_right == "Word Cloud":
-        st.subheader("☁️ Word Cloud")
-        text = " ".join(df["Comment"])
-        wc = WordCloud(width=800, height=400, background_color="white").generate(text)
+        # === RINGKASAN KESELURUHAN ===
+        total_comments = len(df)
+        total_users = df['Komentar'].nunique()
+        st.markdown("### 📌 Ringkasan Keseluruhan")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown(
+                f"""
+                <div class="big-box" style="background:linear-gradient(135deg,#99CCFF,#99FFCC);">
+                    <h2>💬 {total_comments}</h2>
+                    <p>Total Komentar</p>
+                </div>
+                """, unsafe_allow_html=True
+            )
+        with col2:
+            st.markdown(
+                f"""
+                <div class="big-box" style="background:linear-gradient(135deg,#FFCC99,#FFEECC);">
+                    <h2>👥 {total_users}</h2>
+                    <p>Total User</p>
+                </div>
+                """, unsafe_allow_html=True
+            )
+
+elif menu == "Grafik Komentar":
+    st.markdown("### 📋 Komentar & Sentimen")
+    st.markdown("<div class='main-container'>", unsafe_allow_html=True)
+    col1, col2 = st.columns([2,1])
+    with col1:
+        st.dataframe(df)
+    with col2:
+        st.bar_chart(df['Sentimen'].value_counts())
+    st.markdown("</div>", unsafe_allow_html=True)
+
+elif menu == "Wordcloud":
+    st.markdown("### ☁️ Word Cloud & Pie Chart")
+    st.markdown("<div class='main-container'>", unsafe_allow_html=True)
+    col1, col2 = st.columns(2)
+    with col1:
+        all_text = " ".join(df["Komentar"].tolist())
+        all_text = all_text.encode("utf-8", "ignore").decode("utf-8")
+        if all_text.strip():
+            wordcloud = WordCloud(width=800, height=400, background_color="white").generate(all_text)
+            fig_wc, ax = plt.subplots(figsize=(10, 5))
+            ax.imshow(wordcloud, interpolation="bilinear")
+            ax.axis("off")
+            st.pyplot(fig_wc)
+    with col2:
+        sentiment_counts = df['Sentimen'].value_counts()
         fig, ax = plt.subplots()
-        ax.imshow(wc, interpolation="bilinear")
-        ax.axis("off")
-        st.pyplot(fig)
-
-    # ======== Pie Chart ========
-    elif menu_right == "Pie Chart":
-        st.subheader("📊 Distribusi Sentimen")
-        labels = ["Positif", "Netral", "Negatif"]
-        values = [df["pos"].mean(), df["neu"].mean(), df["neg"].mean()]
-        fig, ax = plt.subplots()
-        ax.pie(values, labels=labels, autopct='%1.1f%%', startangle=90)
+        ax.pie(
+            sentiment_counts,
+            labels=sentiment_counts.index,
+            autopct='%1.1f%%',
+            startangle=90,
+            shadow=True,
+            wedgeprops={"edgecolor":"black","linewidth":1,"antialiased":True}
+        )
         ax.axis("equal")
         st.pyplot(fig)
+    st.markdown("</div>", unsafe_allow_html=True)
 
-    # ======== Insight di Tengah ========
-    st.markdown("<div class='insight-box'><h3>📌 Insight</h3><p>Mayoritas komentar bernuansa positif dengan sedikit komentar negatif. Analisis ini bisa dipakai untuk evaluasi konten.</p></div>", unsafe_allow_html=True)
+elif menu == "Insight & Rekomendasi":
+    st.subheader("📊 Insight Sentimen")
+    total, positif, negatif, netral = len(df), (df['Sentimen']=='Positif').sum(), (df['Sentimen']=='Negatif').sum(), (df['Sentimen']=='Netral').sum()
+    st.markdown("<div class='main-container'>", unsafe_allow_html=True)
+    st.write(f"Total komentar dianalisis: **{total}**")
+    st.write(f"Positif: **{positif}** | Negatif: **{negatif}** | Netral: **{netral}**")
+    if positif > negatif:
+        st.success("Mayoritas komentar positif 🎉. Konten disukai audiens.")
+    elif negatif > positif:
+        st.error("Komentar negatif lebih dominan ⚠️. Perlu evaluasi konten.")
+    else:
+        st.info("Komentar seimbang. Bisa ditingkatkan dengan interaksi lebih aktif.")
+
+    st.subheader("💡 Rekomendasi")
+    st.markdown("""
+    - Tingkatkan interaksi dengan penonton (balas komentar, adakan Q&A).  
+    - Perhatikan topik/kata dominan yang disukai.  
+    - Jika komentar negatif banyak, evaluasi kualitas video & penyampaian.  
+    - Gunakan feedback untuk konten berikutnya.  
+    """)
+    st.markdown("</div>", unsafe_allow_html=True)
